@@ -281,15 +281,15 @@ export default function HomePage() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="time">Удобное время для занятий</label>
-                  <input
-                    type="text"
-                    id="time"
-                    name="time"
-                    className="form-control"
-                    placeholder="Например: будни после 18:00"
-                  />
-                </div>
+  <label htmlFor="time">Желаемая дата и время первого занятия</label>
+  <input
+    type="datetime-local"
+    id="time"
+    name="time"
+    className="form-control"
+    required
+  />
+</div>
 
                 <div className="form-group">
                   <label htmlFor="comment">Комментарий</label>

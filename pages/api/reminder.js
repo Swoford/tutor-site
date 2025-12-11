@@ -1,4 +1,3 @@
-// pages/api/reminder.js
 import { supabase } from '../../lib/supabase';
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
