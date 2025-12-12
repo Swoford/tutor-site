@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     const { data, error } = await supabase
       .from('lessons')
       .select('*')
-      .gte('start_time', nowIso)
+      //.gte('start_time', nowIso)
       .order('start_time', { ascending: true });
 
     if (error) {
