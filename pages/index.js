@@ -288,6 +288,7 @@ export default function HomePage() {
     name="time"
     className="form-control"
     required
+    step="3600" // шаг 1 час
   />
 </div>
 
