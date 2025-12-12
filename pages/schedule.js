@@ -86,13 +86,6 @@ export default function SchedulePage() {
               </div>
             )}
           </div>
-
-          <div className="schedule-hint">
-            Управлять расписанием преподаватель может прямо в Telegram через
-            бота: команда <code>/add</code> добавляет урок, <code>/today</code>{' '}
-            показывает занятия на сегодня. Напоминания о занятиях приходят за
-            час до начала урока.
-          </div>
         </div>
       </section>
     </Layout>
