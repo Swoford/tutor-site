@@ -1,3 +1,4 @@
+// pages/api/reminder.js
 import { supabase } from '../../lib/supabase';
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -8,6 +9,7 @@ export default async function handler(req, res) {
     const plus59 = new Date(now.getTime() + 59 * 60 * 1000);
     const plus61 = new Date(now.getTime() + 61 * 60 * 1000);
 
+    // Напоминания за час до занятия
     const { data, error } = await supabase
       .from('lessons')
       .select('*')
@@ -49,6 +51,10 @@ export default async function handler(req, res) {
         .update({ reminder_sent: true })
         .eq('id', l.id);
     }
+
+    // Удаляем уроки, которые закончились больше часа назад
+    const cutoff = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+    await supabase.from('lessons').delete().lt('start_time', cutoff);
 
     return res.status(200).json({ ok: true, count: (data || []).length });
   } catch (err) {
