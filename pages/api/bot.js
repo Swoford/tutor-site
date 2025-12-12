@@ -14,24 +14,51 @@ export default async function handler(req, res) {
   const message = update.message;
 
   try {
-    // 1) Обработка нажатий на кнопки "Принять / Отклонить"
+    // 1) Нажатия на кнопки "Принять / Отклонить" в заявке
     if (callback) {
-      const data = callback.data || '';
       const chatId = callback.message.chat.id.toString();
+      const data = callback.data || '';
 
       if (chatId !== process.env.TEACHER_CHAT_ID) {
+        await answerCallbackQuery(callback.id);
         return res.status(200).json({ ok: true });
       }
 
-      if (data.startsWith('req_accept:')) {
-        const id = Number(data.split(':')[1]);
-        await handleRequestDecision(id, true, callback);
-      } else if (data.startsWith('req_reject:')) {
-        const id = Number(data.split(':')[1]);
-        await handleRequestDecision(id, false, callback);
+      if (data === 'req_accept') {
+        const parsed = parseRequestFromMessageText(callback.message.text);
+        if (parsed.error) {
+          await sendMessage(chatId, parsed.error);
+        } else {
+          const { iso, dateStr, timeStr, name, contact, comment } = parsed;
+
+          const { error } = await supabase.from('lessons').insert({
+            start_time: iso,
+            student_name: name,
+            comment:
+              (comment ? `${comment} ` : '') +
+              `(контакт: ${contact})`,
+            status: 'planned',
+          });
+
+          if (error) {
+            console.error(error);
+            await sendMessage(
+              chatId,
+              'Ошибка при добавлении урока по заявке.'
+            );
+          } else {
+            const newText =
+              callback.message.text +
+              `\n\n✅ Заявка принята. Урок добавлен в расписание (${dateStr} ${timeStr}).`;
+            await editMessageText(chatId, callback.message.message_id, newText);
+          }
+        }
+      } else if (data === 'req_reject') {
+        const newText =
+          callback.message.text + '\n\n❌ Заявка отклонена.';
+        await editMessageText(chatId, callback.message.message_id, newText);
       }
 
-      // Снимаем "часики" на кнопке
       await answerCallbackQuery(callback.id);
       return res.status(200).json({ ok: true });
     }
@@ -53,13 +80,15 @@ export default async function handler(req, res) {
         chatId,
         'Привет! Я бот‑ежедневник.\n\n' +
           'Команды:\n' +
-          '/add ДД.ММ[.ГГГГ] ЧЧ:ММ Имя [комментарий] — добавить урок\n' +
-          '/today — список уроков на сегодня\n\n' +
+          '/add ДД.ММ[.ГГГГ] ЧЧ:00 Имя [комментарий] — добавить урок (только целые часы)\n' +
+          '/today — список уроков на сегодня\n' +
+          '/del ID — удалить урок по ID (ID видно в списке /today)\n\n' +
           'Заявки с сайта приходят с кнопками "Принять / Отклонить".'
       );
       return res.status(200).json({ ok: true });
     }
 
+    // /add ДД.ММ[.ГГГГ] ЧЧ:00 Имя [комментарий]
     if (text.startsWith('/add')) {
       const parsed = parseAddCommand(text);
       if (parsed.error) {
@@ -67,7 +96,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      const { iso, day, month, year, timePart, name, comment } = parsed;
+      const { iso, dateStr, timePart, name, comment } = parsed;
 
       const { error } = await supabase.from('lessons').insert({
         start_time: iso,
@@ -80,16 +109,56 @@ export default async function handler(req, res) {
         console.error(error);
         await sendMessage(chatId, 'Ошибка при добавлении урока');
       } else {
-        const dateStr = `${String(day).padStart(2, '0')}.${String(month).padStart(
-          2,
-          '0'
-        )}.${year}`;
-        await sendMessage(chatId, `Добавлено: ${dateStr} ${timePart} — ${name}`);
+        await sendMessage(
+          chatId,
+          `Добавлено: ${dateStr} ${timePart} — ${name}`
+        );
       }
 
       return res.status(200).json({ ok: true });
     }
 
+    // /del ID — удалить урок
+    if (text.startsWith('/del')) {
+      const parts = text.split(' ');
+      if (parts.length < 2) {
+        await sendMessage(chatId, 'Формат: /del ID\nПример: /del 12');
+        return res.status(200).json({ ok: true });
+      }
+
+      const id = Number(parts[1]);
+      if (!Number.isInteger(id) || id <= 0) {
+        await sendMessage(chatId, 'ID должен быть положительным числом.');
+        return res.status(200).json({ ok: true });
+      }
+
+      const { data, error } = await supabase
+        .from('lessons')
+        .delete()
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error || !data) {
+        console.error(error);
+        await sendMessage(chatId, `Урок с ID ${id} не найден.`);
+      } else {
+        const d = new Date(data.start_time);
+        const dateStr = d.toLocaleDateString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+        });
+        const timeStr = d.toTimeString().slice(0, 5);
+        await sendMessage(
+          chatId,
+          `Урок удалён: [${id}] ${dateStr} ${timeStr} — ${data.student_name}`
+        );
+      }
+
+      return res.status(200).json({ ok: true });
+    }
+
+    // /today — список уроков на сегодня, отсортированный, с ID
     if (text === '/today') {
       const now = new Date();
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -117,7 +186,7 @@ export default async function handler(req, res) {
         const d = new Date(l.start_time);
         const time = d.toTimeString().slice(0, 5);
         const comment = l.comment ? ` (${l.comment})` : '';
-        return `${time} — ${l.student_name}${comment}`;
+        return `[#${l.id}] ${time} — ${l.student_name}${comment}`;
       });
 
       await sendMessage(chatId, 'Сегодня:\n' + lines.join('\n'));
@@ -128,8 +197,9 @@ export default async function handler(req, res) {
       chatId,
       'Команда не распознана.\n\n' +
         'Доступно:\n' +
-        '/add ДД.ММ[.ГГГГ] ЧЧ:ММ Имя [комментарий]\n' +
-        '/today'
+        '/add ДД.ММ[.ГГГГ] ЧЧ:00 Имя [комментарий]\n' +
+        '/today\n' +
+        '/del ID'
     );
     return res.status(200).json({ ok: true });
   } catch (err) {
@@ -138,15 +208,71 @@ export default async function handler(req, res) {
   }
 }
 
+/** Разбор заявки из текста сообщения (для кнопки "Принять") */
+function parseRequestFromMessageText(text) {
+  try {
+    const lines = String(text).split('\n');
+
+    const nameLine = lines.find((l) => l.startsWith('Имя: ')) || '';
+    const contactLine = lines.find((l) => l.startsWith('Контакт: ')) || '';
+    const dtLine =
+      lines.find((l) => l.startsWith('Желаемая дата и время: ')) || '';
+    const commentLine = lines.find((l) => l.startsWith('Комментарий: '));
+
+    if (!dtLine) {
+      return { error: 'Не удалось прочитать дату и время заявки.' };
+    }
+
+    const name = nameLine.replace('Имя: ', '').trim() || 'Без имени';
+    const contact = contactLine.replace('Контакт: ', '').trim() || 'нет';
+    const comment = commentLine
+      ? commentLine.replace('Комментарий: ', '').trim()
+      : '';
+
+    const dtStr = dtLine.replace('Желаемая дата и время: ', '').trim();
+    // "15.02.2025 09:00"
+    const [dateStr, timeStr] = dtStr.split(' ');
+    const [dayStr, monthStr, yearStr] = dateStr.split('.');
+    const [hourStr] = timeStr.split(':');
+
+    const day = Number(dayStr);
+    const month = Number(monthStr);
+    const year = Number(yearStr);
+    const hour = Number(hourStr);
+
+    if (
+      !day ||
+      !month ||
+      !year ||
+      !Number.isInteger(hour) ||
+      hour < 0 ||
+      hour > 23
+    ) {
+      return { error: 'Неверный формат даты или времени в заявке.' };
+    }
+
+    const iso = new Date(
+      `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(
+        2,
+        '0'
+      )}T${String(hour).padStart(2, '0')}:00:00${TZ_OFFSET}`
+    ).toISOString();
+
+    return { iso, dateStr, timeStr, name, contact, comment };
+  } catch (e) {
+    console.error(e);
+    return { error: 'Ошибка при разборе текста заявки.' };
+  }
+}
+
 /** Разбор команды /add */
 function parseAddCommand(text) {
-  // /add 15.02 14:00 Маша коммент
-  // /add 15.02.2025 14:00 Маша коммент
+  // /add 15.02[.2025] 09:00 Имя коммент
   const parts = text.split(' ');
   if (parts.length < 4) {
     return {
       error:
-        'Формат: /add ДД.ММ[.ГГГГ] ЧЧ:ММ Имя [комментарий]\nПример: /add 15.02.2025 14:00 Маша алгебра',
+        'Формат: /add ДД.ММ[.ГГГГ] ЧЧ:00 Имя [комментарий]\nПример: /add 15.02 09:00 Маша алгебра',
     };
   }
 
@@ -164,15 +290,23 @@ function parseAddCommand(text) {
     return { error: 'Неверная дата. Используйте ДД.ММ или ДД.ММ.ГГГГ' };
   }
 
+  const [hStr, mStr] = timePart.split(':');
+  const hour = Number(hStr);
+  const minute = Number(mStr);
+
   if (
     !day ||
     !month ||
     !year ||
-    !timePart.match(/^\d{2}:\d{2}$/)
+    !Number.isInteger(hour) ||
+    hour < 0 ||
+    hour > 23 ||
+    !Number.isInteger(minute) ||
+    minute !== 0
   ) {
     return {
       error:
-        'Проверьте дату и время. Пример: /add 15.02.2025 14:00 Маша алгебра',
+        'Неверное время. Используйте только целые часы (минуты должны быть 00).\nПример: /add 15.02 09:00 Маша',
     };
   }
 
@@ -180,73 +314,18 @@ function parseAddCommand(text) {
     `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(
       2,
       '0'
-    )}T${timePart}:00${TZ_OFFSET}`
+    )}T${String(hour).padStart(2, '0')}:00:00${TZ_OFFSET}`
   ).toISOString();
 
-  return { iso, day, month, year, timePart, name, comment };
+  const dateStr = `${String(day).padStart(2, '0')}.${String(month).padStart(
+    2,
+    '0'
+  )}.${year}`;
+
+  return { iso, dateStr, timePart, name, comment };
 }
 
-/** Обработка "Принять" / "Отклонить" заявки */
-async function handleRequestDecision(reqId, accept, callback) {
-  const chatId = callback.message.chat.id.toString();
-
-  const { data: req, error } = await supabase
-    .from('requests')
-    .select('*')
-    .eq('id', reqId)
-    .single();
-
-  if (error || !req) {
-    console.error(error);
-    await sendMessage(chatId, `Не удалось найти заявку №${reqId}.`);
-    return;
-  }
-
-  if (req.status !== 'pending') {
-    await sendMessage(
-      chatId,
-      `Заявка №${reqId} уже была обработана (статус: ${req.status}).`
-    );
-    return;
-  }
-
-  if (accept) {
-    // Создаём урок в lessons
-    const { error: insErr } = await supabase.from('lessons').insert({
-      start_time: req.desired_time,
-      student_name: req.name,
-      comment: (req.comment || '') + ` (контакт: ${req.contact})`,
-      status: 'planned',
-    });
-
-    if (insErr) {
-      console.error(insErr);
-      await sendMessage(chatId, `Ошибка при добавлении урока по заявке №${reqId}`);
-      return;
-    }
-
-    await supabase
-      .from('requests')
-      .update({ status: 'accepted' })
-      .eq('id', reqId);
-
-    const newText =
-      callback.message.text + '\n\n✅ Заявка принята. Урок добавлен в расписание.';
-
-    await editMessageText(chatId, callback.message.message_id, newText);
-  } else {
-    await supabase
-      .from('requests')
-      .update({ status: 'rejected' })
-      .eq('id', reqId);
-
-    const newText = callback.message.text + '\n\n❌ Заявка отклонена.';
-
-    await editMessageText(chatId, callback.message.message_id, newText);
-  }
-}
-
-/** Сервисные функции работы с Telegram API */
+/** Сервисные функции Telegram API */
 
 async function sendMessage(chatId, text) {
   await fetch(`${TELEGRAM_API}/sendMessage`, {
