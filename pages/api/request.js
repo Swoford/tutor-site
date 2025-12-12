@@ -1,10 +1,6 @@
 // pages/api/request.js
-import { supabase } from '../../lib/supabase';
-
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
-
-// часовой пояс репетитора — Москва (+03:00). Если другой, поправь на свой.
-const TZ_OFFSET = '+03:00';
+const TZ_OFFSET = '+03:00'; // часовой пояс репетитора
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -19,42 +15,13 @@ export default async function handler(req, res) {
     }
 
     // time приходит как "YYYY-MM-DDTHH:MM"
-    // Добавляем секунды и часовой пояс, чтобы получить корректный timestamptz
-    const desiredIso = new Date(`${time}:00${TZ_OFFSET}`).toISOString();
+    const { displayDate, displayTime } = normalizeTimeToFullHour(time);
 
-    // 1) Сохраняем заявку в таблицу requests
-    const { data, error } = await supabase
-      .from('requests')
-      .insert({
-        name,
-        contact: phone,
-        desired_time: desiredIso,
-        comment: comment || null,
-        status: 'pending',
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Supabase insert error', error);
-      return res.status(500).json({ error: 'DB error' });
-    }
-
-    const reqId = data.id;
-    const d = new Date(data.desired_time);
-    const dateStr = d.toLocaleDateString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-    const timeStr = d.toTimeString().slice(0, 5);
-
-    // 2) Отправляем преподу сообщение с кнопками "Принять / Отклонить"
     const text =
-      `Новая заявка с сайта (№${reqId}):\n` +
+      `Новая заявка с сайта:\n` +
       `Имя: ${name}\n` +
       `Контакт: ${phone}\n` +
-      `Желаемая дата и время: ${dateStr} ${timeStr}\n` +
+      `Желаемая дата и время: ${displayDate} ${displayTime}\n` +
       (comment ? `Комментарий: ${comment}\n` : '') +
       `\nВыберите действие:`;
 
@@ -67,8 +34,8 @@ export default async function handler(req, res) {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '✅ Принять', callback_data: `req_accept:${reqId}` },
-              { text: '❌ Отклонить', callback_data: `req_reject:${reqId}` },
+              { text: '✅ Принять', callback_data: 'req_accept' },
+              { text: '❌ Отклонить', callback_data: 'req_reject' },
             ],
           ],
         },
@@ -80,4 +47,33 @@ export default async function handler(req, res) {
     console.error(err);
     return res.status(500).json({ error: 'Ошибка сервера' });
   }
+}
+
+// Нормализуем к целому часу и подготавливаем строку для отображения
+function normalizeTimeToFullHour(timeStr) {
+  // "2025-02-15T18:30" -> "2025-02-15T18:00:00+03:00"
+  const [datePart, hm] = String(timeStr).split('T');
+  if (!datePart || !hm) {
+    throw new Error('Неверный формат времени');
+  }
+
+  const [hourStr] = hm.split(':');
+  const hour = Number(hourStr);
+
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    throw new Error('Неверный час');
+  }
+
+  const isoWithTz = new Date(
+    `${datePart}T${String(hour).padStart(2, '0')}:00:00${TZ_OFFSET}`
+  );
+
+  const displayDate = isoWithTz.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  const displayTime = isoWithTz.toTimeString().slice(0, 5); // "HH:MM"
+
+  return { displayDate, displayTime };
 }
