@@ -8,22 +8,39 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { name, phone, time, comment } = req.body || {};
+    const { name, phone, time, comment, website } = req.body || {};
+
+    // Honeypot: если поле заполнено — это бот, просто игнорируем
+    if (website) {
+      return res.status(200).json({ ok: true });
+    }
 
     if (!name || !phone || !time) {
-      return res.status(400).json({ error: 'Имя, контакт и время обязательны' });
+      return res
+        .status(400)
+        .json({ error: 'Имя, контакт и время обязательны' });
     }
+
+    // Определяем IP
+    const ip = getClientIp(req);
 
     // time приходит как "YYYY-MM-DDTHH:MM"
     const { displayDate, displayTime } = normalizeTimeToFullHour(time);
 
-    const text =
+    let text =
       `Новая заявка с сайта:\n` +
       `Имя: ${name}\n` +
       `Контакт: ${phone}\n` +
-      `Желаемая дата и время: ${displayDate} ${displayTime}\n` +
-      (comment ? `Комментарий: ${comment}\n` : '') +
-      `\nВыберите действие:`;
+      `Желаемая дата и время: ${displayDate} ${displayTime}\n`;
+
+    if (comment) {
+      text += `Комментарий: ${comment}\n`;
+    }
+    if (ip) {
+      text += `IP: ${ip}\n`;
+    }
+
+    text += `\nВыберите действие:`;
 
     await fetch(`${TELEGRAM_API}/sendMessage`, {
       method: 'POST',
@@ -76,4 +93,22 @@ function normalizeTimeToFullHour(timeStr) {
   const displayTime = isoWithTz.toTimeString().slice(0, 5); // "HH:MM"
 
   return { displayDate, displayTime };
+}
+
+// Получаем IP клиента из заголовков / сокета
+function getClientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length > 0) {
+    return fwd.split(',')[0].trim();
+  }
+  if (Array.isArray(fwd) && fwd.length > 0) {
+    return fwd[0].split(',')[0].trim();
+  }
+
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.length > 0) {
+    return realIp;
+  }
+
+  return req.socket?.remoteAddress || null;
 }
