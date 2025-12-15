@@ -29,12 +29,31 @@ export default function HomePage() {
     return isPhone || isTgUsername || isTgLink;
   };
 
-  const handleSubmit = async (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setFormStatus(null);
 
     const formData = new FormData(e.target);
+
+    // Берём и сразу триммим контакт
+    const contact = (formData.get('phone') || '').toString().trim();
+
+    if (!validateContact(contact)) {
+      setErrors((prev) => ({
+        ...prev,
+        phone:
+          'Введите телефон (например: +7 999 123-45-67) или Telegram (@username или ссылку t.me/username).',
+      }));
+      setIsSubmitting(false);
+      return;
+    } else {
+      setErrors((prev) => ({ ...prev, phone: null }));
+    }
+
+    // Подменяем в форме очищенный контакт
+    formData.set('phone', contact);
+
     const body = Object.fromEntries(formData.entries());
 
     try {
@@ -293,26 +312,44 @@ export default function HomePage() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="phone">Телефон или Telegram</label>
-                  <input
-                    type="text"
-                    id="phone"
-                    name="phone"
-                    className="form-control"
-                    required
-                  />
-                </div>
+  <label htmlFor="phone">Телефон или Telegram</label>
+  <input
+    type="text"
+    id="phone"
+    name="phone"
+    className={`form-control ${errors.phone ? 'error' : ''}`}
+    required
+    placeholder="+7 999 123-45-67 или @username"
+  />
+  {errors.phone && (
+    <p className="field-error">{errors.phone}</p>
+  )}
+</div>
 
                 <div className="form-group">
-  <label htmlFor="time">Желаемая дата и время первого занятия</label>
-  <input
-    type="datetime-local"
-    id="time"
-    name="time"
-    className="form-control"
-    required
-    step="3600" // шаг 1 час
-  />
+  <label htmlFor="date">Желаемая дата и время первого занятия</label>
+  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+    <input
+      type="date"
+      id="date"
+      name="date"
+      className="form-control"
+      required
+      style={{ flex: '1 1 160px', minWidth: '160px' }}
+    />
+    <select
+      id="time"
+      name="time"
+      className="form-control"
+      required
+      style={{ flex: '0 0 140px', maxWidth: '180px' }}
+    >
+      <option value="">Время</option>
+      {hours.map((h) => (
+        <option key={h} value={`${h}:00`}>{`${h}:00`}</option>
+      ))}
+    </select>
+  </div>
 </div>
 
                 <div className="form-group">
