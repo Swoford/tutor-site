@@ -1,6 +1,5 @@
 // pages/api/request.js
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
-const TZ_OFFSET = '+03:00'; // часовой пояс репетитора
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -64,7 +63,7 @@ export default async function handler(req, res) {
   }
 }
 
-// Формируем человекочитаемые дату/время и проверяем, что только целый час
+// Формируем человекочитаемые дату/время БЕЗ использования Date (чтобы не ехало на часовых поясах)
 function buildDateTime(dateStr, timeStr) {
   // dateStr: "YYYY-MM-DD", timeStr: "HH:MM"
   const [yearStr, monthStr, dayStr] = String(dateStr).split('-');
@@ -89,19 +88,10 @@ function buildDateTime(dateStr, timeStr) {
     throw new Error('Неверная дата или время');
   }
 
-  const isoWithTz = new Date(
-    `${yearStr}-${monthStr}-${dayStr}T${String(hour).padStart(
-      2,
-      '0'
-    )}:00:00${TZ_OFFSET}`
-  );
-
-  const displayDate = isoWithTz.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-  const displayTime = isoWithTz.toTimeString().slice(0, 5); // HH:MM
+  const dd = String(day).padStart(2, '0');
+  const mm = String(month).padStart(2, '0');
+  const displayDate = `${dd}.${mm}.${yearStr}`;
+  const displayTime = `${String(hour).padStart(2, '0')}:00`;
 
   return { displayDate, displayTime };
 }
