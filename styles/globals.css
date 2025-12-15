@@ -910,3 +910,20 @@ footer {
   font-size: 0.95rem;
   color: #666;
 }
+
+/* Honeypot field for spam protection */
+.hp-field {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.hp-field label,
+.hp-field input {
+  height: 0;
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
