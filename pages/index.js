@@ -303,6 +303,18 @@ export default function HomePage() {
                   ></textarea>
                 </div>
 
+                {/* Honeypot – скрытое поле, которое должен оставить пустым нормальный пользователь */}
+  <div className="hp-field">
+    <label htmlFor="website">Если вы человек, оставьте это поле пустым</label>
+    <input
+      type="text"
+      id="website"
+      name="website"
+      autoComplete="off"
+      tabIndex="-1"
+    />
+  </div>
+
                 <button
                   type="submit"
                   className="btn"
