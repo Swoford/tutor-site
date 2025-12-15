@@ -5,6 +5,29 @@ import Layout from '../components/Layout';
 export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formStatus, setFormStatus] = useState(null); // 'ok' | 'error' | null
+  const [errors, setErrors] = useState({});            // <- добавили
+
+  const hours = [
+    '08', '09', '10', '11', '12',
+    '13', '14', '15', '16', '17',
+    '18', '19', '20', '21'
+  ];
+
+  const validateContact = (value) => {
+    const v = (value || '').trim();
+    if (!v) return false;
+
+    // Телефон: минимум 10 цифр (можно с +, пробелами, скобками и дефисами)
+    const digits = v.replace(/[^\d]/g, '');
+    const isPhone = digits.length >= 10;
+
+    // Telegram: @username или username, 4–32 символа
+    const isTgUsername = /^@?[a-zA-Z0-9_]{4,32}$/.test(v);
+    // Ссылка вида https://t.me/username
+    const isTgLink = /^https?:\/\/t\.me\/[a-zA-Z0-9_]{4,32}$/i.test(v);
+
+    return isPhone || isTgUsername || isTgLink;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
