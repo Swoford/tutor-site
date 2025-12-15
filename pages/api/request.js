@@ -8,24 +8,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { name, phone, time, comment, website } = req.body || {};
+    const { name, phone, date, time, comment, website } = req.body || {};
 
-    // Honeypot: если поле заполнено — это бот, просто игнорируем
+    // Honeypot – если поле заполнено, считаем, что это бот, и молча игнорируем
     if (website) {
       return res.status(200).json({ ok: true });
     }
 
-    if (!name || !phone || !time) {
+    if (!name || !phone || !date || !time) {
       return res
         .status(400)
-        .json({ error: 'Имя, контакт и время обязательны' });
+        .json({ error: 'Имя, контакт, дата и время обязательны' });
     }
 
-    // Определяем IP
     const ip = getClientIp(req);
 
-    // time приходит как "YYYY-MM-DDTHH:MM"
-    const { displayDate, displayTime } = normalizeTimeToFullHour(time);
+    const { displayDate, displayTime } = buildDateTime(date, time);
 
     let text =
       `Новая заявка с сайта:\n` +
@@ -66,23 +64,36 @@ export default async function handler(req, res) {
   }
 }
 
-// Нормализуем к целому часу и подготавливаем строку для отображения
-function normalizeTimeToFullHour(timeStr) {
-  // "2025-02-15T18:30" -> "2025-02-15T18:00:00+03:00"
-  const [datePart, hm] = String(timeStr).split('T');
-  if (!datePart || !hm) {
-    throw new Error('Неверный формат времени');
-  }
+// Формируем человекочитаемые дату/время и проверяем, что только целый час
+function buildDateTime(dateStr, timeStr) {
+  // dateStr: "YYYY-MM-DD", timeStr: "HH:MM"
+  const [yearStr, monthStr, dayStr] = String(dateStr).split('-');
+  const [hStr, mStr] = String(timeStr).split(':');
 
-  const [hourStr] = hm.split(':');
-  const hour = Number(hourStr);
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const hour = Number(hStr);
+  const minute = Number(mStr);
 
-  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
-    throw new Error('Неверный час');
+  if (
+    !year ||
+    !month ||
+    !day ||
+    !Number.isInteger(hour) ||
+    hour < 0 ||
+    hour > 23 ||
+    !Number.isInteger(minute) ||
+    minute !== 0
+  ) {
+    throw new Error('Неверная дата или время');
   }
 
   const isoWithTz = new Date(
-    `${datePart}T${String(hour).padStart(2, '0')}:00:00${TZ_OFFSET}`
+    `${yearStr}-${monthStr}-${dayStr}T${String(hour).padStart(
+      2,
+      '0'
+    )}:00:00${TZ_OFFSET}`
   );
 
   const displayDate = isoWithTz.toLocaleDateString('ru-RU', {
@@ -90,7 +101,7 @@ function normalizeTimeToFullHour(timeStr) {
     month: '2-digit',
     year: 'numeric',
   });
-  const displayTime = isoWithTz.toTimeString().slice(0, 5); // "HH:MM"
+  const displayTime = isoWithTz.toTimeString().slice(0, 5); // HH:MM
 
   return { displayDate, displayTime };
 }
